@@ -8,7 +8,7 @@ import datetime
 from os import path
 
 '''
-GOAL:
+GOALS:
 Columns of:
 mac - ip - switchport - switch - vlan - mac_vendor - last_updated - ping_MM-DD-24-MM - ping_...
 (mac is index, and required)
