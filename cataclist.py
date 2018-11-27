@@ -65,7 +65,7 @@ def print_instructions():
 \033[1m[5]\033[22m -
 \033[1m[6]\033[22m - DEBUG
 \033[1m[7]\033[22m - MAC OUI Vendor Lookup
-\033[1m[8]\033[22m - Soon - (Ping Check)
+\033[1m[8]\033[22m - Ping Sweep
 \033[1m[9]\033[22m - Export to CSV
 \033[1m[0]\033[22m - Quit (Without Save)
 
@@ -82,7 +82,7 @@ def ping_check(df_in):
     ping_column_name = f"ping_{now_time.strftime('%b')}{now_time.day}_{now_time.hour}:{now_time.minute}"
     # print (ping_column_name)
 
-    first_list = (list(df['ip']))
+    first_list = (list(df_in['ip']))
     cleaned_list = [x for x in first_list if str(x) != 'nan']
     nmap_ip_in = (' '.join(cleaned_list))
   
@@ -90,7 +90,7 @@ def ping_check(df_in):
     nm.scan(hosts=nmap_ip_in, arguments='-n -sn -v')
     hosts_list = [[x, nm[x]['status']['state']] for x in nm.all_hosts()]
 
-    for df_ind, df_row in df_out.iterrows():
+    for df_ind, df_row in df_in.iterrows():
         for nm_ip, nm_updown in hosts_list:
             if df_row['ip'] == nm_ip:
                 print (nm_ip + " found match and is " + nm_updown)
