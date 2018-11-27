@@ -6,39 +6,40 @@ import time
 import re
 import datetime
 from os import path
+import nmap
 
-'''
-GOALS:
-Columns of:
-mac - ip - switchport - switch - vlan - mac_vendor - last_updated - ping_MM-DD-24-MM - ping_...
-(mac is index, and required)
+# Global Parameters:
+template_columns = ["mac", "ip", "switchport", "switch", "vlan", "mac_vendor"]
 
-Cisco-like console for working on data 
 
-starts with blank template
+"""
 
-default mac format - cisco (since being used by cisco mainly)
+TO DO:
+-convert all MAC address input to cisco format (10aa.bbbb.cccc)
+--create function that can convert between the three main formats (01-23-45-67-89-AB,  86:00:a8:48:73:00, and 10aa.bbbb.cccc)
+-Check that input CSV has the correct columns. Delete or add as necessary (before the merge step)
+-conver Vlan to cisco format on input (Vlan25, not 25)
+-download oui.txt file automatically at beginning, if it does not exist
 
-create function to convert between them all
-
-Functions:
--csv input (with merge)
+TO DO Functions:
 -input via manual entry
--view all data
 -view select data
 -input via raw paste (detecting and parsing, find switchname on first or last lines)
 -ping (multiple attempts recorded, nmap)
--Mac vendor lookup (local database csv required, likely)
--export to csv/excel
+-export to excel
+-export to text (choose single column)
 
-'''
+"""
 
 
-# http://standards-oui.ieee.org/oui.txt
 def get_mac_vendor_txt(maca):
 
+    # http://standards-oui.ieee.org/oui.txt
+    # Uses this file as reference, must match spacing exactly.
+    # Download the file into the same folder as the main script
+
     # First, convert mac to "base 16" non-symboled format, all uppercase
-    maca = re.sub('[:\.-]', '', maca)
+    maca = re.sub("[:\.-]", "", maca)
     maca = maca.upper()
 
     with open("oui.txt") as search:
@@ -51,23 +52,9 @@ def get_mac_vendor_txt(maca):
     return "(NO VENDOR MATCH)"
 
 
-'''
-#test design of mac convert function
-#perhaps try: http://www.macvendorlookup.com/api/v2/00-23-AB-7B-58-99
-#  --- https://www.macvendorlookup.com/index.php?page=api
-
-
-def get_mac_vendor_api(maca):
-    time.sleep(1.1) #API only allows 1 request per second, 1000 per day
-    r = requests.get(f"http://api.macvendors.com/{maca}")
-    if r.text.startswith('{"errors"'):
-        return ""
-    else:
-        return r.text
-'''
-
 def print_instructions():
-    print ("""
+    print(
+        """
 \033[36m
 ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
 
@@ -84,55 +71,68 @@ def print_instructions():
 
 ╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍
 
-\033[0m""")
+\033[0m"""
+    )
 
-def row_combine (r1, r2):
-    
+def ping_check(df_in):
 
-    #for c2, v2 in r2.items():
-        #print('column:', c2, '     value:', v2)
-        #for c1, v1 in r1.items():
+    df_out = df_in
 
-    #print("r1 (Existing):\n",r1,"\n\n")
-    #print("r2 (Adding):\n",r2,"\n\n")
+    now_time = datetime.datetime.now()
+    ping_column_name = f"ping_{now_time.strftime('%b')}{now_time.day}_{now_time.hour}:{now_time.minute}"
+    # print (ping_column_name)
+
+    first_list = (list(df['ip']))
+    cleaned_list = [x for x in first_list if str(x) != 'nan']
+    nmap_ip_in = (' '.join(cleaned_list))
+  
+    nm = nmap.PortScanner()
+    nm.scan(hosts=nmap_ip_in, arguments='-n -sn -v')
+    hosts_list = [[x, nm[x]['status']['state']] for x in nm.all_hosts()]
+
+    for df_ind, df_row in df_out.iterrows():
+        for nm_ip, nm_updown in hosts_list:
+            if df_row['ip'] == nm_ip:
+                print (nm_ip + " found match and is " + nm_updown)
+                df_out.at[df_ind,ping_column_name] = nm_updown
+
+
+    return df_out
+
+
+
+def row_combine(r1, r2):
+
+    # for c2, v2 in r2.items():
+    # print('column:', c2, '     value:', v2)
+    # for c1, v1 in r1.items():
+
+    # print("r1 (Existing):\n",r1,"\n\n")
+    # print("r2 (Adding):\n",r2,"\n\n")
     r2.update(r1)
-    #Preferring old data. "Adding" csv must contain all valid columns.
-    #logic could be better and this may be expanded in the future
+    # Preferring old data. "Adding" csv must contain all valid columns.
+    # logic could be better and this may be expanded in the future
     return r2
 
 
-def view_current_data():
-    print(df)
-
-'''
-def import_merge_csv_old(df_current):
-    print ("csv file must have first row match EXACTLY as the valid column types:")
-    print ("mac - ip - switchport - mac_vendor - vlan")
-    inp = input('Specify filename for import╼> ')
-    dtmp = pd.read_csv(inp)
-    dtmp.set_index("mac", inplace=True)
-
-    # need to prune columns that shouldn't be there (TO BE DONE LATER)
-
-    #remove whitespace from all strings. (TO BE DONE LATER)
-    # dtmp['mac'] = dtmp['mac'].str.strip()
-    # dtmp['ip'] = dtmp['ip'].str.strip()
-
-    # merge with existing data - index against the mac address for each. 
-    df_new = pd.concat([df_current, dtmp], axis=1, sort=True )   # Axis zero means concatenate againt index (mac address)
-    print(df_new)
-    return df_new
-'''
 
 def import_merge_csv(df_existing):
-    print (".CSV file must have first row match EXACTLY as the valid column types (order not important):")
-    print ("mac - ip - switchport - switch - vlan - mac_vendor")
-    inp = input('Specify filename for import╼> ')
-    df_adding = pd.read_csv(inp)
-    
+    print(
+        ".CSV file must have first row match EXACTLY as the valid column types (order not important):"
+    )
+    print(template_columns)
+    inp = input("Specify filename for import╼> ")
+
+    try:
+        df_adding = pd.read_csv(inp)
+    except:
+        print("File could not be read, or does not exist!")
+        # exit by returning input arg file
+        return df_existing
+
     # Remove duplcate MAC addresses, keeping first one
     df_adding = df_adding.drop_duplicates(subset="mac")
-    
+
     df_adding.set_index("mac", inplace=True)
 
     # df_final will be copy of df_existing and appended/edited
@@ -140,12 +140,13 @@ def import_merge_csv(df_existing):
     df_final = df_existing
     df_leftover = df_adding
 
-
-    for a_indx, a_row in df_adding.iterrows():   #iterate through "adding" df
-        for e_indx,e_row in df_existing.iterrows():  #iterate through "existing" df
+    for a_indx, a_row in df_adding.iterrows():  # iterate through "adding" df
+        for e_indx, e_row in df_existing.iterrows():  # iterate through "existing" df
             if a_indx == e_indx:
-                df_final.loc[e_indx] = row_combine(df_existing.loc[e_indx],df_adding.loc[a_indx])
-                #finally, delete the row from df-leftover
+                df_final.loc[e_indx] = row_combine(
+                    df_existing.loc[e_indx], df_adding.loc[a_indx]
+                )
+                # finally, delete the row from df-leftover
                 df_leftover = df_leftover.drop([a_indx])
 
     # now, append df-leftover onto df-final
@@ -153,11 +154,12 @@ def import_merge_csv(df_existing):
     # then, return df_final out of this function
     return df_final
 
+
 def export_csv(df_export):
     while True:
-        inp = input('Specify filename for export╼> ')
+        inp = input("Specify filename for export╼> ")
         if path.exists(inp):
-            print (f"File {inp} already exists! Choose another filename...")
+            print(f"File {inp} already exists! Choose another filename...")
         elif inp == "":
             pass
         else:
@@ -165,20 +167,22 @@ def export_csv(df_export):
             break
 
 
-########### BEGIN!!!!! ###############
+############### BEGIN!!!!! ###############
 
+# mac - ip - switchport - switch - vlan - mac_vendor - ping_MM-DD-24-MM - ping_...
 
 # First, create empty pandas as starting point
-df = pd.DataFrame(columns=['mac', 'ip', 'switchport', 'vlan', 'mac_vendor', 'last_updated'])
+df = pd.DataFrame(columns=template_columns)
 # Set last_updated column to datetime datatype (set all others to object)
 df = df.astype(object)
-df["last_updated"] = pd.to_datetime(df["last_updated"])
+# (implementing later) df["last_updated"] = pd.to_datetime(df["last_updated"])
 
 # Set mac-address as the index
 df.set_index("mac", inplace=True)
 
 
-print ('''
+print(
+    """
 \033[32m
 ⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓⬓
 \033[33m
@@ -196,14 +200,15 @@ print ('''
 \033[32m
 ⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒⬒
 
-\033[0m''')
+\033[0m"""
+)
 
 print_instructions()
 
 while True:
-    inp = input('Choose Number╼> ')
+    inp = input("Choose Number╼> ")
     if inp == "1":
-        view_current_data()
+        print(df)
     elif inp == "2":
         df = import_merge_csv(df)
     elif inp == "3":
@@ -215,18 +220,17 @@ while True:
     elif inp == "6":
         print(df.dtypes)
     elif inp == "7":
-        df['mac_vendor'] = df['mac_vendor'].astype("object") #convert column to Object if it got messed elsewhere...
+        # convert column to Object if it got messed elsewhere...
+        df["mac_vendor"] = df["mac_vendor"].astype("object")
         for macx, row in df.iterrows():
-            df.at[macx,"mac_vendor"] = get_mac_vendor_txt(macx)
+            df.at[macx, "mac_vendor"] = get_mac_vendor_txt(macx)
     elif inp == "8":
-        print("Placeholder")
+        df = ping_check(df)
     elif inp == "9":
         export_csv(df)
     elif inp == "0":
-        break   #end of program
+        break  # end of program
     else:
         print_instructions()
 
-#end of program
-
-
+# end of program
