@@ -76,6 +76,8 @@ def print_instructions():
 
 def ping_check(df_in):
 
+    # This works better when script overall is run as SUDO/ROOT. otherwise it seems to miss a few IP's consistently.
+    
     df_out = df_in
 
     now_time = datetime.datetime.now()
